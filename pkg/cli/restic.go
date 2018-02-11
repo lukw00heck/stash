@@ -43,7 +43,7 @@ type Snapshot struct {
 	Hostname string    `json:"hostname"`
 	Username string    `json:"username"`
 	UID      int       `json:"uid"`
-	Gid      int       `json:"gid"`
+	GID      int       `json:"gid"`
 }
 
 func (w *ResticWrapper) ListSnapshots() ([]Snapshot, error) {
