@@ -75,6 +75,7 @@ func (c *StashController) runReplicaSetInjector(key string) error {
 		rs := obj.(*extensions.ReplicaSet).DeepCopy()
 		rs.GetObjectKind().SetGroupVersionKind(extensions.SchemeGroupVersion.WithKind(api.KindReplicaSet))
 
+		// OCFIX
 		if !ext_util.IsOwnedByDeployment(rs) {
 			w, err := workload.ConvertToWorkload(rs.DeepCopy())
 			if err != nil {
