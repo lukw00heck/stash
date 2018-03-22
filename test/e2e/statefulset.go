@@ -1,29 +1,29 @@
-package e2e_test
+package e2e
 
 import (
 	"time"
 
-	"github.com/appscode/go/types"
-	ext_util "github.com/appscode/kutil/extensions/v1beta1"
+	apps_util "github.com/appscode/kutil/apps/v1beta1"
 	api "github.com/appscode/stash/apis/stash/v1alpha1"
 	"github.com/appscode/stash/pkg/util"
 	"github.com/appscode/stash/test/e2e/framework"
 	. "github.com/appscode/stash/test/e2e/matcher"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	apps "k8s.io/api/apps/v1beta1"
 	core "k8s.io/api/core/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var _ = Describe("ReplicaSet", func() {
+var _ = Describe("StatefulSet", func() {
 	var (
 		err          error
 		f            *framework.Invocation
 		restic       api.Restic
 		secondRestic api.Restic
 		cred         core.Secret
-		rs           extensions.ReplicaSet
+		svc          core.Service
+		ss           apps.StatefulSet
 		recovery     api.Recovery
 	)
 
@@ -40,11 +40,12 @@ var _ = Describe("ReplicaSet", func() {
 		restic.Spec.Backend.StorageSecretName = cred.Name
 		secondRestic.Spec.Backend.StorageSecretName = cred.Name
 		recovery.Spec.Backend.StorageSecretName = cred.Name
-		rs = f.ReplicaSet()
+		svc = f.HeadlessService()
+		ss = f.StatefulSet()
 	})
 
 	var (
-		shouldBackupNewReplicaSet = func() {
+		shouldBackupNewStatefulSet = func() {
 			By("Creating repository Secret " + cred.Name)
 			err = f.CreateSecret(cred)
 			Expect(err).NotTo(HaveOccurred())
@@ -53,12 +54,16 @@ var _ = Describe("ReplicaSet", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating ReplicaSet " + rs.Name)
-			_, err = f.CreateReplicaSet(rs)
+			By("Creating service " + svc.Name)
+			err = f.CreateService(svc)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Creating StatefulSet " + ss.Name)
+			_, err = f.CreateStatefulSet(ss)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for sidecar")
-			f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+			f.EventuallyStatefulSet(ss.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 			By("Waiting for backup to complete")
 			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
@@ -69,13 +74,17 @@ var _ = Describe("ReplicaSet", func() {
 			f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">=", 1)))
 		}
 
-		shouldBackupExistingReplicaSet = func() {
+		shouldBackupExistingStatefulSet = func() {
 			By("Creating repository Secret " + cred.Name)
 			err = f.CreateSecret(cred)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating ReplicaSet " + rs.Name)
-			_, err = f.CreateReplicaSet(rs)
+			By("Creating service " + svc.Name)
+			err = f.CreateService(svc)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Creating StatefulSet " + ss.Name)
+			_, err = f.CreateStatefulSet(ss)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Creating restic " + restic.Name)
@@ -83,7 +92,7 @@ var _ = Describe("ReplicaSet", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for sidecar")
-			f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+			f.EventuallyStatefulSet(ss.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 			By("Waiting for backup to complete")
 			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
@@ -103,12 +112,16 @@ var _ = Describe("ReplicaSet", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating ReplicaSet " + rs.Name)
-			_, err = f.CreateReplicaSet(rs)
+			By("Creating service " + svc.Name)
+			err = f.CreateService(svc)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Creating StatefulSet " + ss.Name)
+			_, err = f.CreateStatefulSet(ss)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for sidecar")
-			f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+			f.EventuallyStatefulSet(ss.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 			By("Waiting for backup to complete")
 			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
@@ -118,7 +131,8 @@ var _ = Describe("ReplicaSet", func() {
 			By("Deleting restic " + restic.Name)
 			f.DeleteRestic(restic.ObjectMeta)
 
-			f.EventuallyReplicaSet(rs.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
+			By("Wating to remove sidecar")
+			f.EventuallyStatefulSet(ss.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
 		}
 
 		shouldStopBackupIfLabelChanged = func() {
@@ -130,20 +144,24 @@ var _ = Describe("ReplicaSet", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating ReplicaSet " + rs.Name)
-			_, err = f.CreateReplicaSet(rs)
+			By("Creating service " + svc.Name)
+			err = f.CreateService(svc)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Creating StatefulSet " + ss.Name)
+			_, err = f.CreateStatefulSet(ss)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for sidecar")
-			f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+			f.EventuallyStatefulSet(ss.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 			By("Waiting for backup to complete")
 			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
 				return r.Status.BackupCount
 			}, BeNumerically(">=", 1)))
 
-			By("Removing labels of ReplicaSet " + rs.Name)
-			_, _, err = ext_util.PatchReplicaSet(f.KubeClient, &rs, func(in *extensions.ReplicaSet) *extensions.ReplicaSet {
+			By("Removing labels of StatefulSet " + ss.Name)
+			_, _, err = apps_util.PatchStatefulSet(f.KubeClient, &ss, func(in *apps.StatefulSet) *apps.StatefulSet {
 				in.Labels = map[string]string{
 					"app": "unmatched",
 				}
@@ -151,7 +169,8 @@ var _ = Describe("ReplicaSet", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			f.EventuallyReplicaSet(rs.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
+			By("Waiting to remove sidecar")
+			f.EventuallyStatefulSet(ss.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
 		}
 
 		shouldStopBackupIfSelectorChanged = func() {
@@ -163,12 +182,16 @@ var _ = Describe("ReplicaSet", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating ReplicaSet " + rs.Name)
-			_, err = f.CreateReplicaSet(rs)
+			By("Creating service " + svc.Name)
+			err = f.CreateService(svc)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Creating StatefulSet " + ss.Name)
+			_, err = f.CreateStatefulSet(ss)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for sidecar")
-			f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+			f.EventuallyStatefulSet(ss.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 			By("Waiting for backup to complete")
 			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
@@ -186,15 +209,16 @@ var _ = Describe("ReplicaSet", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			f.EventuallyReplicaSet(rs.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
+			f.EventuallyStatefulSet(ss.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
 		}
 
-		shouldRestoreReplicaSet = func() {
-			shouldBackupNewReplicaSet()
+		shouldRestoreStatefulSet = func() {
+			shouldBackupNewStatefulSet()
 			recovery.Spec.Workload = api.LocalTypedReference{
-				Kind: api.KindReplicaSet,
-				Name: rs.Name,
+				Kind: api.KindStatefulSet,
+				Name: ss.Name,
 			}
+			recovery.Spec.PodOrdinal = "0"
 
 			By("Creating recovery " + recovery.Name)
 			err = f.CreateRecovery(recovery)
@@ -203,7 +227,7 @@ var _ = Describe("ReplicaSet", func() {
 			f.EventuallyRecoverySucceed(recovery.ObjectMeta).Should(BeTrue())
 		}
 
-		shouldElectLeaderAndBackupRS = func() {
+		shouldMutateAndBackupNewStatefulSet = func() {
 			By("Creating repository Secret " + cred.Name)
 			err = f.CreateSecret(cred)
 			Expect(err).NotTo(HaveOccurred())
@@ -212,39 +236,15 @@ var _ = Describe("ReplicaSet", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			rs.Spec.Replicas = types.Int32P(2) // two replicas
-			By("Creating ReplicaSet " + rs.Name)
-			_, err = f.CreateReplicaSet(rs)
+			By("Creating service " + svc.Name)
+			err = f.CreateService(svc)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Waiting for sidecar")
-			f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveSidecar(util.StashContainer))
-
-			f.CheckLeaderElection(rs.ObjectMeta, api.KindReplicaSet)
-
-			By("Waiting for backup to complete")
-			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
-				return r.Status.BackupCount
-			}, BeNumerically(">=", 1)))
-
-			By("Waiting for backup event")
-			f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">=", 1)))
-		}
-
-		shouldMutateAndBackupNewReplicaSet = func() {
-			By("Creating repository Secret " + cred.Name)
-			err = f.CreateSecret(cred)
+			By("Creating StatefulSet " + ss.Name)
+			obj, err := f.CreateStatefulSet(ss)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating restic " + restic.Name)
-			err = f.CreateRestic(restic)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Creating ReplicaSet " + rs.Name)
-			obj, err := f.CreateReplicaSet(rs)
-			Expect(err).NotTo(HaveOccurred())
-
-			// sidecar should be added as soon as rs created, we don't need to wait for it
+			// sidecar should be added as soon as ss created, we don't need to wait for it
 			By("Checking sidecar created")
 			Expect(obj).Should(HaveSidecar(util.StashContainer))
 
@@ -257,20 +257,24 @@ var _ = Describe("ReplicaSet", func() {
 			f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">=", 1)))
 		}
 
-		shouldNotMutateNewReplicaSet = func() {
+		shouldNotMutateNewStatefulSet = func() {
 			By("Creating repository Secret " + cred.Name)
 			err = f.CreateSecret(cred)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating ReplicaSet " + rs.Name)
-			obj, err := f.CreateReplicaSet(rs)
+			By("Creating service " + svc.Name)
+			err = f.CreateService(svc)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Creating StatefulSet " + ss.Name)
+			obj, err := f.CreateStatefulSet(ss)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking sidecar not added")
 			Expect(obj).ShouldNot(HaveSidecar(util.StashContainer))
 		}
 
-		shouldRejectToCreateNewReplicaSet = func() {
+		shouldRejectToCreateNewStatefulSet = func() {
 			By("Creating repository Secret " + cred.Name)
 			err = f.CreateSecret(cred)
 			Expect(err).NotTo(HaveOccurred())
@@ -283,8 +287,12 @@ var _ = Describe("ReplicaSet", func() {
 			err = f.CreateRestic(secondRestic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating ReplicaSet " + rs.Name)
-			_, err := f.CreateReplicaSet(rs)
+			By("Creating service " + svc.Name)
+			err = f.CreateService(svc)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Creating StatefulSet " + ss.Name)
+			_, err := f.CreateStatefulSet(ss)
 			Expect(err).To(HaveOccurred())
 		}
 
@@ -297,8 +305,12 @@ var _ = Describe("ReplicaSet", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating ReplicaSet " + rs.Name)
-			obj, err := f.CreateReplicaSet(rs)
+			By("Creating service " + svc.Name)
+			err = f.CreateService(svc)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Creating StatefulSet " + ss.Name)
+			obj, err := f.CreateStatefulSet(ss)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking sidecar added")
@@ -309,8 +321,8 @@ var _ = Describe("ReplicaSet", func() {
 				return r.Status.BackupCount
 			}, BeNumerically(">=", 1)))
 
-			By("Removing labels of ReplicaSet " + rs.Name)
-			obj, _, err = ext_util.PatchReplicaSet(f.KubeClient, &rs, func(in *extensions.ReplicaSet) *extensions.ReplicaSet {
+			By("Removing labels of StatefulSet " + ss.Name)
+			obj, _, err = apps_util.PatchStatefulSet(f.KubeClient, &ss, func(in *apps.StatefulSet) *apps.StatefulSet {
 				in.Labels = map[string]string{
 					"app": "unmatched",
 				}
@@ -331,19 +343,23 @@ var _ = Describe("ReplicaSet", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating ReplicaSet " + rs.Name)
-			previousLabel := rs.Labels
-			rs.Labels = map[string]string{
+			By("Creating service " + svc.Name)
+			err = f.CreateService(svc)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Creating StatefulSet " + ss.Name)
+			previousLabel := ss.Labels
+			ss.Labels = map[string]string{
 				"app": "unmatched",
 			}
-			obj, err := f.CreateReplicaSet(rs)
+			obj, err := f.CreateStatefulSet(ss)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking sidecar not added")
 			Expect(obj).ShouldNot(HaveSidecar(util.StashContainer))
 
-			By("Adding label to match restic" + rs.Name)
-			obj, _, err = ext_util.PatchReplicaSet(f.KubeClient, &rs, func(in *extensions.ReplicaSet) *extensions.ReplicaSet {
+			By("Adding label to match restic" + ss.Name)
+			obj, _, err = apps_util.PatchStatefulSet(f.KubeClient, &ss, func(in *apps.StatefulSet) *apps.StatefulSet {
 				in.Labels = previousLabel
 				return in
 			})
@@ -361,7 +377,8 @@ var _ = Describe("ReplicaSet", func() {
 
 	Describe("Creating restic for", func() {
 		AfterEach(func() {
-			f.DeleteReplicaSet(rs.ObjectMeta)
+			f.DeleteStatefulSet(ss.ObjectMeta)
+			f.DeleteService(svc.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 		})
@@ -371,8 +388,8 @@ var _ = Describe("ReplicaSet", func() {
 				cred = f.SecretForLocalBackend()
 				restic = f.ResticForLocalBackend()
 			})
-			It(`should backup new ReplicaSet`, shouldBackupNewReplicaSet)
-			It(`should backup existing ReplicaSet`, shouldBackupExistingReplicaSet)
+			It(`should backup new StatefulSet`, shouldBackupNewStatefulSet)
+			XIt(`should backup existing StatefulSet`, shouldBackupExistingStatefulSet)
 		})
 
 		Context(`"S3" backend`, func() {
@@ -380,8 +397,8 @@ var _ = Describe("ReplicaSet", func() {
 				cred = f.SecretForS3Backend()
 				restic = f.ResticForS3Backend()
 			})
-			It(`should backup new ReplicaSet`, shouldBackupNewReplicaSet)
-			It(`should backup existing ReplicaSet`, shouldBackupExistingReplicaSet)
+			It(`should backup new StatefulSet`, shouldBackupNewStatefulSet)
+			XIt(`should backup existing StatefulSet`, shouldBackupExistingStatefulSet)
 		})
 
 		Context(`"DO" backend`, func() {
@@ -389,8 +406,8 @@ var _ = Describe("ReplicaSet", func() {
 				cred = f.SecretForDOBackend()
 				restic = f.ResticForDOBackend()
 			})
-			It(`should backup new ReplicaSet`, shouldBackupNewReplicaSet)
-			It(`should backup existing ReplicaSet`, shouldBackupExistingReplicaSet)
+			It(`should backup new StatefulSet`, shouldBackupNewStatefulSet)
+			XIt(`should backup existing StatefulSet`, shouldBackupExistingStatefulSet)
 		})
 
 		Context(`"GCS" backend`, func() {
@@ -398,8 +415,8 @@ var _ = Describe("ReplicaSet", func() {
 				cred = f.SecretForGCSBackend()
 				restic = f.ResticForGCSBackend()
 			})
-			It(`should backup new ReplicaSet`, shouldBackupNewReplicaSet)
-			It(`should backup existing ReplicaSet`, shouldBackupExistingReplicaSet)
+			It(`should backup new StatefulSet`, shouldBackupNewStatefulSet)
+			XIt(`should backup existing StatefulSet`, shouldBackupExistingStatefulSet)
 		})
 
 		Context(`"Azure" backend`, func() {
@@ -407,8 +424,8 @@ var _ = Describe("ReplicaSet", func() {
 				cred = f.SecretForAzureBackend()
 				restic = f.ResticForAzureBackend()
 			})
-			It(`should backup new ReplicaSet`, shouldBackupNewReplicaSet)
-			It(`should backup existing ReplicaSet`, shouldBackupExistingReplicaSet)
+			It(`should backup new StatefulSet`, shouldBackupNewStatefulSet)
+			XIt(`should backup existing StatefulSet`, shouldBackupExistingStatefulSet)
 		})
 
 		Context(`"Swift" backend`, func() {
@@ -416,8 +433,8 @@ var _ = Describe("ReplicaSet", func() {
 				cred = f.SecretForSwiftBackend()
 				restic = f.ResticForSwiftBackend()
 			})
-			It(`should backup new ReplicaSet`, shouldBackupNewReplicaSet)
-			It(`should backup existing ReplicaSet`, shouldBackupExistingReplicaSet)
+			It(`should backup new StatefulSet`, shouldBackupNewStatefulSet)
+			XIt(`should backup existing StatefulSet`, shouldBackupExistingStatefulSet)
 		})
 
 		Context(`"B2" backend`, func() {
@@ -425,14 +442,15 @@ var _ = Describe("ReplicaSet", func() {
 				cred = f.SecretForB2Backend()
 				restic = f.ResticForB2Backend()
 			})
-			It(`should backup new ReplicaSet`, shouldBackupNewReplicaSet)
-			It(`should backup existing ReplicaSet`, shouldBackupExistingReplicaSet)
+			It(`should backup new StatefulSet`, shouldBackupNewStatefulSet)
+			XIt(`should backup existing StatefulSet`, shouldBackupExistingStatefulSet)
 		})
 	})
 
-	Describe("Changing ReplicaSet labels", func() {
+	XDescribe("Changing StatefulSet labels", func() {
 		AfterEach(func() {
-			f.DeleteReplicaSet(rs.ObjectMeta)
+			f.DeleteStatefulSet(ss.ObjectMeta)
+			f.DeleteService(svc.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 		})
@@ -443,9 +461,10 @@ var _ = Describe("ReplicaSet", func() {
 		It(`should stop backup`, shouldStopBackupIfLabelChanged)
 	})
 
-	Describe("Changing Restic selector", func() {
+	XDescribe("Changing Restic selector", func() {
 		AfterEach(func() {
-			f.DeleteReplicaSet(rs.ObjectMeta)
+			f.DeleteStatefulSet(ss.ObjectMeta)
+			f.DeleteService(svc.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 		})
@@ -456,9 +475,10 @@ var _ = Describe("ReplicaSet", func() {
 		It(`should stop backup`, shouldStopBackupIfSelectorChanged)
 	})
 
-	Describe("Deleting restic for", func() {
+	XDescribe("Deleting restic for", func() {
 		AfterEach(func() {
-			f.DeleteReplicaSet(rs.ObjectMeta)
+			f.DeleteStatefulSet(ss.ObjectMeta)
+			f.DeleteService(svc.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 		})
 
@@ -521,9 +541,10 @@ var _ = Describe("ReplicaSet", func() {
 
 	Describe("Creating recovery for", func() {
 		AfterEach(func() {
-			f.DeleteReplicaSet(rs.ObjectMeta)
+			f.DeleteStatefulSet(ss.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
+			f.DeleteService(svc.ObjectMeta)
 			f.DeleteRecovery(recovery.ObjectMeta)
 			framework.CleanupMinikubeHostPath()
 		})
@@ -534,7 +555,7 @@ var _ = Describe("ReplicaSet", func() {
 				restic = f.ResticForHostPathLocalBackend()
 				recovery = f.RecoveryForRestic(restic)
 			})
-			It(`should restore local replicaset backup`, shouldRestoreReplicaSet)
+			It(`should restore local StatefulSet backup`, shouldRestoreStatefulSet)
 		})
 
 		Context(`"S3" backend`, func() {
@@ -543,23 +564,7 @@ var _ = Describe("ReplicaSet", func() {
 				restic = f.ResticForS3Backend()
 				recovery = f.RecoveryForRestic(restic)
 			})
-			It(`should restore s3 replicaset backup`, shouldRestoreReplicaSet)
-		})
-	})
-
-	Describe("Leader election for", func() {
-		AfterEach(func() {
-			f.DeleteReplicaSet(rs.ObjectMeta)
-			f.DeleteRestic(restic.ObjectMeta)
-			f.DeleteSecret(cred.ObjectMeta)
-		})
-
-		Context(`"Local" backend`, func() {
-			BeforeEach(func() {
-				cred = f.SecretForLocalBackend()
-				restic = f.ResticForLocalBackend()
-			})
-			It(`should elect leader and backup new RS`, shouldElectLeaderAndBackupRS)
+			It(`should restore s3 StatefulSet backup`, shouldRestoreStatefulSet)
 		})
 	})
 
@@ -570,9 +575,10 @@ var _ = Describe("ReplicaSet", func() {
 			}
 		})
 		AfterEach(func() {
-			f.DeleteReplicaSet(rs.ObjectMeta)
+			f.DeleteStatefulSet(ss.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteRestic(secondRestic.ObjectMeta)
+			f.DeleteService(svc.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 		})
 
@@ -583,39 +589,37 @@ var _ = Describe("ReplicaSet", func() {
 				secondRestic = restic
 				secondRestic.Name = "second-restic"
 			})
-			It("should mutate and backup new ReplicaSet", shouldMutateAndBackupNewReplicaSet)
-			It("should not mutate new ReplicaSet if no restic select it", shouldNotMutateNewReplicaSet)
-			It("should reject to create new ReplicaSet if multiple restic select it", shouldRejectToCreateNewReplicaSet)
+			It("should mutate and backup new StatefulSet", shouldMutateAndBackupNewStatefulSet)
+			It("should not mutate new StatefulSet if no restic select it", shouldNotMutateNewStatefulSet)
+			It("should reject to create new StatefulSet if multiple restic select it", shouldRejectToCreateNewStatefulSet)
 			It("should remove sidecar instantly if label change to match no restic", shouldRemoveSidecarInstantly)
 			It("should add sidecar instantly if label change to match single restic", shouldAddSidecarInstantly)
 		})
 	})
+
 	Describe("Offline backup for", func() {
 		AfterEach(func() {
-			f.DeleteReplicaSet(rs.ObjectMeta)
+			f.DeleteStatefulSet(ss.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
+			f.DeleteService(svc.ObjectMeta)
 			framework.CleanupMinikubeHostPath()
 		})
 
-		Context(`Single Replica`, func() {
+		Context(`"Local" backend`, func() {
 			BeforeEach(func() {
 				cred = f.SecretForLocalBackend()
 				restic = f.ResticForHostPathLocalBackend()
 				restic.Spec.Type = api.BackupOffline
 				restic.Spec.Schedule = "*/5 * * * *"
 			})
-			It(`should backup new ReplicaSet`, func() {
+			It(`should backup new StatefulSet`, func() {
 				By("Creating repository Secret " + cred.Name)
 				err = f.CreateSecret(cred)
 				Expect(err).NotTo(HaveOccurred())
 
 				By("Creating restic " + restic.Name)
 				err = f.CreateRestic(restic)
-				Expect(err).NotTo(HaveOccurred())
-
-				By("Creating ReplicaSet " + rs.Name)
-				_, err = f.CreateReplicaSet(rs)
 				Expect(err).NotTo(HaveOccurred())
 
 				cronJobName := util.ScaledownCronPrefix + restic.Name
@@ -625,75 +629,29 @@ var _ = Describe("ReplicaSet", func() {
 					return err
 				}).Should(BeNil())
 
-				By("Waiting for scale down rs to 0 replica")
-				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveReplica(0))
+				By("Creating service " + svc.Name)
+				err = f.CreateService(svc)
+				Expect(err).NotTo(HaveOccurred())
 
-				By("Wating for scale up rs to 1 replica")
-				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveReplica(1))
+				By("Creating StatefulSet " + ss.Name)
+				_, err = f.CreateStatefulSet(ss)
+				Expect(err).NotTo(HaveOccurred())
 
 				By("Waiting for init-container")
-				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveInitContainer(util.StashContainer))
+				f.EventuallyStatefulSet(ss.ObjectMeta).Should(HaveInitContainer(util.StashContainer))
 
-				By("Waiting for backup to complete")
+				By("Waiting for initial backup to complete")
 				f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
 					return r.Status.BackupCount
 				}, BeNumerically(">=", 1)))
 
-				By("Waiting for backup event")
-				f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">=", 1)))
-
-				By("Waiting for scale up rs to original replica")
-				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveReplica(int(*rs.Spec.Replicas)))
-			})
-		})
-
-		Context("Multiple Replica", func() {
-			BeforeEach(func() {
-				cred = f.SecretForLocalBackend()
-				restic = f.ResticForHostPathLocalBackend()
-				restic.Spec.Type = api.BackupOffline
-				restic.Spec.Schedule = "*/5 * * * *"
-			})
-			It(`should backup new ReplicaSet`, func() {
-				By("Creating repository Secret " + cred.Name)
-				err = f.CreateSecret(cred)
-				Expect(err).NotTo(HaveOccurred())
-
-				By("Creating restic " + restic.Name)
-				err = f.CreateRestic(restic)
-				Expect(err).NotTo(HaveOccurred())
-
-				By("Creating ReplicaSet " + rs.Name)
-				rs.Spec.Replicas = types.Int32P(3)
-				_, err = f.CreateReplicaSet(rs)
-				Expect(err).NotTo(HaveOccurred())
-
-				cronJobName := util.ScaledownCronPrefix + restic.Name
-				By("Checking cron job created: " + cronJobName)
-				Eventually(func() error {
-					_, err := f.KubeClient.BatchV1beta1().CronJobs(restic.Namespace).Get(cronJobName, metav1.GetOptions{})
-					return err
-				}).Should(BeNil())
-
-				By("Waiting for scale down rs to 0 replica")
-				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveReplica(0))
-
-				By("Wating for scale up rs to 1 replica")
-				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveReplica(1))
-
-				By("Waiting for init-container")
-				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveInitContainer(util.StashContainer))
-
-				By("Waiting for backup to complete")
+				By("Waiting for next backup to complete")
 				f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
 					return r.Status.BackupCount
-				}, BeNumerically(">=", 1)))
+				}, BeNumerically(">=", 2)))
 
 				By("Waiting for backup event")
-				f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">=", 1)))
-
-				By("Waiting for scale up rs to original replica")
-				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveReplica(int(*rs.Spec.Replicas)))
+				f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">", 1)))
 			})
 		})
 	})
@@ -701,7 +659,8 @@ var _ = Describe("ReplicaSet", func() {
 	Describe("Pause Restic to stop backup", func() {
 		Context(`"Local" backend`, func() {
 			AfterEach(func() {
-				f.DeleteReplicaSet(rs.ObjectMeta)
+				f.DeleteStatefulSet(ss.ObjectMeta)
+				f.DeleteService(svc.ObjectMeta)
 				f.DeleteRestic(restic.ObjectMeta)
 				f.DeleteSecret(cred.ObjectMeta)
 			})
@@ -709,21 +668,25 @@ var _ = Describe("ReplicaSet", func() {
 				cred = f.SecretForLocalBackend()
 				restic = f.ResticForLocalBackend()
 			})
-			It(`should be able to Pause and Resume backup`, func() {
+			It(`should able to Pause and Resume backup`, func() {
 				By("Creating repository Secret " + cred.Name)
 				err = f.CreateSecret(cred)
 				Expect(err).NotTo(HaveOccurred())
 
-				By("Creating restic " + restic.Name)
+				By("Creating restic")
 				err = f.CreateRestic(restic)
 				Expect(err).NotTo(HaveOccurred())
 
-				By("Creating ReplicaSet " + rs.Name)
-				_, err = f.CreateReplicaSet(rs)
+				By("Creating service " + svc.Name)
+				err = f.CreateService(svc)
+				Expect(err).NotTo(HaveOccurred())
+
+				By("Creating StatefulSet " + ss.Name)
+				_, err = f.CreateStatefulSet(ss)
 				Expect(err).NotTo(HaveOccurred())
 
 				By("Waiting for sidecar")
-				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+				f.EventuallyStatefulSet(ss.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 				By("Waiting for backup to complete")
 				f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
@@ -767,7 +730,6 @@ var _ = Describe("ReplicaSet", func() {
 
 				By("Waiting for backup event")
 				f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">", previousBackupCount)))
-
 			})
 
 		})

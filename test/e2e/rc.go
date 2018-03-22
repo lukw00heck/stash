@@ -1,9 +1,10 @@
-package e2e_test
+package e2e
 
 import (
 	"time"
 
-	ext_util "github.com/appscode/kutil/extensions/v1beta1"
+	"github.com/appscode/go/types"
+	core_util "github.com/appscode/kutil/core/v1"
 	api "github.com/appscode/stash/apis/stash/v1alpha1"
 	"github.com/appscode/stash/pkg/util"
 	"github.com/appscode/stash/test/e2e/framework"
@@ -11,18 +12,17 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	core "k8s.io/api/core/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var _ = Describe("DaemonSet", func() {
+var _ = Describe("ReplicationController", func() {
 	var (
 		err          error
 		f            *framework.Invocation
 		restic       api.Restic
 		secondRestic api.Restic
 		cred         core.Secret
-		daemon       extensions.DaemonSet
+		rc           core.ReplicationController
 		recovery     api.Recovery
 	)
 
@@ -39,11 +39,11 @@ var _ = Describe("DaemonSet", func() {
 		restic.Spec.Backend.StorageSecretName = cred.Name
 		secondRestic.Spec.Backend.StorageSecretName = cred.Name
 		recovery.Spec.Backend.StorageSecretName = cred.Name
-		daemon = f.DaemonSet()
+		rc = f.ReplicationController()
 	})
 
 	var (
-		shouldBackupNewDaemonSet = func() {
+		shouldBackupNewReplicationController = func() {
 			By("Creating repository Secret " + cred.Name)
 			err = f.CreateSecret(cred)
 			Expect(err).NotTo(HaveOccurred())
@@ -52,12 +52,12 @@ var _ = Describe("DaemonSet", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating DaemonSet " + daemon.Name)
-			_, err = f.CreateDaemonSet(daemon)
+			By("Creating ReplicationController " + rc.Name)
+			_, err = f.CreateReplicationController(rc)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for sidecar")
-			f.EventuallyDaemonSet(daemon.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+			f.EventuallyReplicationController(rc.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 			By("Waiting for backup to complete")
 			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
@@ -68,13 +68,13 @@ var _ = Describe("DaemonSet", func() {
 			f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">=", 1)))
 		}
 
-		shouldBackupExistingDaemonSet = func() {
+		shouldBackupExistingReplicationController = func() {
 			By("Creating repository Secret " + cred.Name)
 			err = f.CreateSecret(cred)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating DaemonSet " + daemon.Name)
-			_, err = f.CreateDaemonSet(daemon)
+			By("Creating ReplicationController " + rc.Name)
+			_, err = f.CreateReplicationController(rc)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Creating restic " + restic.Name)
@@ -82,7 +82,7 @@ var _ = Describe("DaemonSet", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for sidecar")
-			f.EventuallyDaemonSet(daemon.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+			f.EventuallyReplicationController(rc.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 			By("Waiting for backup to complete")
 			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
@@ -102,12 +102,12 @@ var _ = Describe("DaemonSet", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating DaemonSet " + daemon.Name)
-			_, err = f.CreateDaemonSet(daemon)
+			By("Creating ReplicationController " + rc.Name)
+			_, err = f.CreateReplicationController(rc)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for sidecar")
-			f.EventuallyDaemonSet(daemon.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+			f.EventuallyReplicationController(rc.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 			By("Waiting for backup to complete")
 			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
@@ -117,7 +117,8 @@ var _ = Describe("DaemonSet", func() {
 			By("Deleting restic " + restic.Name)
 			f.DeleteRestic(restic.ObjectMeta)
 
-			f.EventuallyDaemonSet(daemon.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
+			By("Wating to remove sidecar")
+			f.EventuallyReplicationController(rc.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
 		}
 
 		shouldStopBackupIfLabelChanged = func() {
@@ -129,20 +130,20 @@ var _ = Describe("DaemonSet", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating DaemonSet " + daemon.Name)
-			_, err = f.CreateDaemonSet(daemon)
+			By("Creating ReplicationController " + rc.Name)
+			_, err = f.CreateReplicationController(rc)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for sidecar")
-			f.EventuallyDaemonSet(daemon.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+			f.EventuallyReplicationController(rc.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 			By("Waiting for backup to complete")
 			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
 				return r.Status.BackupCount
 			}, BeNumerically(">=", 1)))
 
-			By("Removing labels of DaemonSet " + daemon.Name)
-			_, _, err = ext_util.PatchDaemonSet(f.KubeClient, &daemon, func(in *extensions.DaemonSet) *extensions.DaemonSet {
+			By("Removing labels of ReplicationController " + rc.Name)
+			_, _, err = core_util.PatchRC(f.KubeClient, &rc, func(in *core.ReplicationController) *core.ReplicationController {
 				in.Labels = map[string]string{
 					"app": "unmatched",
 				}
@@ -150,7 +151,7 @@ var _ = Describe("DaemonSet", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			f.EventuallyDaemonSet(daemon.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
+			f.EventuallyReplicationController(rc.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
 		}
 
 		shouldStopBackupIfSelectorChanged = func() {
@@ -162,12 +163,12 @@ var _ = Describe("DaemonSet", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating DaemonSet " + daemon.Name)
-			_, err = f.CreateDaemonSet(daemon)
+			By("Creating ReplicationController " + rc.Name)
+			_, err = f.CreateReplicationController(rc)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for sidecar")
-			f.EventuallyDaemonSet(daemon.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+			f.EventuallyReplicationController(rc.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 			By("Waiting for backup to complete")
 			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
@@ -185,16 +186,15 @@ var _ = Describe("DaemonSet", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			f.EventuallyDaemonSet(daemon.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
+			f.EventuallyReplicationController(rc.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
 		}
 
-		shouldRestoreDemonset = func() {
-			shouldBackupNewDaemonSet()
+		shouldRestoreRC = func() {
+			shouldBackupNewReplicationController()
 			recovery.Spec.Workload = api.LocalTypedReference{
-				Kind: api.KindDaemonSet,
-				Name: daemon.Name,
+				Kind: api.KindReplicationController,
+				Name: rc.Name,
 			}
-			recovery.Spec.NodeName = "minikube"
 
 			By("Creating recovery " + recovery.Name)
 			err = f.CreateRecovery(recovery)
@@ -203,7 +203,7 @@ var _ = Describe("DaemonSet", func() {
 			f.EventuallyRecoverySucceed(recovery.ObjectMeta).Should(BeTrue())
 		}
 
-		shouldMutateAndBackupNewDaemonSet = func() {
+		shouldElectLeaderAndBackupRC = func() {
 			By("Creating repository Secret " + cred.Name)
 			err = f.CreateSecret(cred)
 			Expect(err).NotTo(HaveOccurred())
@@ -212,11 +212,39 @@ var _ = Describe("DaemonSet", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating DaemonSet " + daemon.Name)
-			obj, err := f.CreateDaemonSet(daemon)
+			rc.Spec.Replicas = types.Int32P(2) // two replicas
+			By("Creating ReplicationController " + rc.Name)
+			_, err = f.CreateReplicationController(rc)
 			Expect(err).NotTo(HaveOccurred())
 
-			// sidecar should be added as soon as daemonset created, we don't need to wait for it
+			f.CheckLeaderElection(rc.ObjectMeta, api.KindReplicationController)
+
+			By("Waiting for sidecar")
+			f.EventuallyReplicationController(rc.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+
+			By("Waiting for backup to complete")
+			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
+				return r.Status.BackupCount
+			}, BeNumerically(">=", 1)))
+
+			By("Waiting for backup event")
+			f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">=", 1)))
+		}
+
+		shouldMutateAndBackupNewReplicationController = func() {
+			By("Creating repository Secret " + cred.Name)
+			err = f.CreateSecret(cred)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Creating restic " + restic.Name)
+			err = f.CreateRestic(restic)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Creating ReplicationController " + rc.Name)
+			obj, err := f.CreateReplicationController(rc)
+			Expect(err).NotTo(HaveOccurred())
+
+			// sidecar should be added as soon as rc created, we don't need to wait for it
 			By("Checking sidecar created")
 			Expect(obj).Should(HaveSidecar(util.StashContainer))
 
@@ -229,20 +257,20 @@ var _ = Describe("DaemonSet", func() {
 			f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">=", 1)))
 		}
 
-		shouldNotMutateNewDaemonSet = func() {
+		shouldNotMutateNewReplicationController = func() {
 			By("Creating repository Secret " + cred.Name)
 			err = f.CreateSecret(cred)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating DaemonSet " + daemon.Name)
-			obj, err := f.CreateDaemonSet(daemon)
+			By("Creating ReplicationController " + rc.Name)
+			obj, err := f.CreateReplicationController(rc)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking sidecar not added")
 			Expect(obj).ShouldNot(HaveSidecar(util.StashContainer))
 		}
 
-		shouldRejectToCreateNewDaemonSet = func() {
+		shouldRejectToCreateNewReplicationController = func() {
 			By("Creating repository Secret " + cred.Name)
 			err = f.CreateSecret(cred)
 			Expect(err).NotTo(HaveOccurred())
@@ -255,8 +283,8 @@ var _ = Describe("DaemonSet", func() {
 			err = f.CreateRestic(secondRestic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating DaemonSet " + daemon.Name)
-			_, err := f.CreateDaemonSet(daemon)
+			By("Creating ReplicationController " + rc.Name)
+			_, err := f.CreateReplicationController(rc)
 			Expect(err).To(HaveOccurred())
 		}
 
@@ -269,8 +297,8 @@ var _ = Describe("DaemonSet", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating DaemonSet " + daemon.Name)
-			obj, err := f.CreateDaemonSet(daemon)
+			By("Creating ReplicationController " + rc.Name)
+			obj, err := f.CreateReplicationController(rc)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking sidecar added")
@@ -281,8 +309,8 @@ var _ = Describe("DaemonSet", func() {
 				return r.Status.BackupCount
 			}, BeNumerically(">=", 1)))
 
-			By("Removing labels of DaemonSet " + daemon.Name)
-			obj, _, err = ext_util.PatchDaemonSet(f.KubeClient, &daemon, func(in *extensions.DaemonSet) *extensions.DaemonSet {
+			By("Removing labels of ReplicationController " + rc.Name)
+			obj, _, err = core_util.PatchRC(f.KubeClient, &rc, func(in *core.ReplicationController) *core.ReplicationController {
 				in.Labels = map[string]string{
 					"app": "unmatched",
 				}
@@ -303,19 +331,19 @@ var _ = Describe("DaemonSet", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating DaemonSet " + daemon.Name)
-			previousLabel := daemon.Labels
-			daemon.Labels = map[string]string{
+			By("Creating ReplicationController " + rc.Name)
+			previousLabel := rc.Labels
+			rc.Labels = map[string]string{
 				"app": "unmatched",
 			}
-			obj, err := f.CreateDaemonSet(daemon)
+			obj, err := f.CreateReplicationController(rc)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking sidecar not added")
 			Expect(obj).ShouldNot(HaveSidecar(util.StashContainer))
 
-			By("Adding label to match restic" + daemon.Name)
-			obj, _, err = ext_util.PatchDaemonSet(f.KubeClient, &daemon, func(in *extensions.DaemonSet) *extensions.DaemonSet {
+			By("Adding label to match restic" + rc.Name)
+			obj, _, err = core_util.PatchRC(f.KubeClient, &rc, func(in *core.ReplicationController) *core.ReplicationController {
 				in.Labels = previousLabel
 				return in
 			})
@@ -333,7 +361,7 @@ var _ = Describe("DaemonSet", func() {
 
 	Describe("Creating restic for", func() {
 		AfterEach(func() {
-			f.DeleteDaemonSet(daemon.ObjectMeta)
+			f.DeleteReplicationController(rc.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 		})
@@ -343,8 +371,8 @@ var _ = Describe("DaemonSet", func() {
 				cred = f.SecretForLocalBackend()
 				restic = f.ResticForLocalBackend()
 			})
-			It(`should backup new DaemonSet`, shouldBackupNewDaemonSet)
-			It(`should backup existing DaemonSet`, shouldBackupExistingDaemonSet)
+			It(`should backup new ReplicationController`, shouldBackupNewReplicationController)
+			It(`should backup existing ReplicationController`, shouldBackupExistingReplicationController)
 		})
 
 		Context(`"S3" backend`, func() {
@@ -352,8 +380,8 @@ var _ = Describe("DaemonSet", func() {
 				cred = f.SecretForS3Backend()
 				restic = f.ResticForS3Backend()
 			})
-			It(`should backup new DaemonSet`, shouldBackupNewDaemonSet)
-			It(`should backup existing DaemonSet`, shouldBackupExistingDaemonSet)
+			It(`should backup new ReplicationController`, shouldBackupNewReplicationController)
+			It(`should backup existing ReplicationController`, shouldBackupExistingReplicationController)
 		})
 
 		Context(`"DO" backend`, func() {
@@ -361,8 +389,8 @@ var _ = Describe("DaemonSet", func() {
 				cred = f.SecretForDOBackend()
 				restic = f.ResticForDOBackend()
 			})
-			It(`should backup new DaemonSet`, shouldBackupNewDaemonSet)
-			It(`should backup existing DaemonSet`, shouldBackupExistingDaemonSet)
+			It(`should backup new ReplicationController`, shouldBackupNewReplicationController)
+			It(`should backup existing ReplicationController`, shouldBackupExistingReplicationController)
 		})
 
 		Context(`"GCS" backend`, func() {
@@ -370,8 +398,8 @@ var _ = Describe("DaemonSet", func() {
 				cred = f.SecretForGCSBackend()
 				restic = f.ResticForGCSBackend()
 			})
-			It(`should backup new DaemonSet`, shouldBackupNewDaemonSet)
-			It(`should backup existing DaemonSet`, shouldBackupExistingDaemonSet)
+			It(`should backup new ReplicationController`, shouldBackupNewReplicationController)
+			It(`should backup existing ReplicationController`, shouldBackupExistingReplicationController)
 		})
 
 		Context(`"Azure" backend`, func() {
@@ -379,8 +407,8 @@ var _ = Describe("DaemonSet", func() {
 				cred = f.SecretForAzureBackend()
 				restic = f.ResticForAzureBackend()
 			})
-			It(`should backup new DaemonSet`, shouldBackupNewDaemonSet)
-			It(`should backup existing DaemonSet`, shouldBackupExistingDaemonSet)
+			It(`should backup new ReplicationController`, shouldBackupNewReplicationController)
+			It(`should backup existing ReplicationController`, shouldBackupExistingReplicationController)
 		})
 
 		Context(`"Swift" backend`, func() {
@@ -388,8 +416,8 @@ var _ = Describe("DaemonSet", func() {
 				cred = f.SecretForSwiftBackend()
 				restic = f.ResticForSwiftBackend()
 			})
-			It(`should backup new DaemonSet`, shouldBackupNewDaemonSet)
-			It(`should backup existing DaemonSet`, shouldBackupExistingDaemonSet)
+			It(`should backup new ReplicationController`, shouldBackupNewReplicationController)
+			It(`should backup existing ReplicationController`, shouldBackupExistingReplicationController)
 		})
 
 		Context(`"B2" backend`, func() {
@@ -397,14 +425,14 @@ var _ = Describe("DaemonSet", func() {
 				cred = f.SecretForB2Backend()
 				restic = f.ResticForB2Backend()
 			})
-			It(`should backup new DaemonSet`, shouldBackupNewDaemonSet)
-			It(`should backup existing DaemonSet`, shouldBackupExistingDaemonSet)
+			It(`should backup new ReplicationController`, shouldBackupNewReplicationController)
+			It(`should backup existing ReplicationController`, shouldBackupExistingReplicationController)
 		})
 	})
 
-	Describe("Changing DaemonSet labels", func() {
+	Describe("Changing ReplicationController labels", func() {
 		AfterEach(func() {
-			f.DeleteDaemonSet(daemon.ObjectMeta)
+			f.DeleteReplicationController(rc.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 		})
@@ -417,7 +445,7 @@ var _ = Describe("DaemonSet", func() {
 
 	Describe("Changing Restic selector", func() {
 		AfterEach(func() {
-			f.DeleteDaemonSet(daemon.ObjectMeta)
+			f.DeleteReplicationController(rc.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 		})
@@ -430,7 +458,7 @@ var _ = Describe("DaemonSet", func() {
 
 	Describe("Deleting restic for", func() {
 		AfterEach(func() {
-			f.DeleteDaemonSet(daemon.ObjectMeta)
+			f.DeleteReplicationController(rc.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 		})
 
@@ -493,7 +521,7 @@ var _ = Describe("DaemonSet", func() {
 
 	Describe("Creating recovery for", func() {
 		AfterEach(func() {
-			f.DeleteDaemonSet(daemon.ObjectMeta)
+			f.DeleteReplicationController(rc.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 			f.DeleteRecovery(recovery.ObjectMeta)
@@ -506,7 +534,7 @@ var _ = Describe("DaemonSet", func() {
 				restic = f.ResticForHostPathLocalBackend()
 				recovery = f.RecoveryForRestic(restic)
 			})
-			It(`should restore local daemonset backup`, shouldRestoreDemonset)
+			It(`should restore local rc backup`, shouldRestoreRC)
 		})
 
 		Context(`"S3" backend`, func() {
@@ -515,9 +543,26 @@ var _ = Describe("DaemonSet", func() {
 				restic = f.ResticForS3Backend()
 				recovery = f.RecoveryForRestic(restic)
 			})
-			It(`should restore s3 daemonset backup`, shouldRestoreDemonset)
+			It(`should restore s3 rc backup`, shouldRestoreRC)
 		})
 	})
+
+	Describe("Leader election for", func() {
+		AfterEach(func() {
+			f.DeleteReplicationController(rc.ObjectMeta)
+			f.DeleteRestic(restic.ObjectMeta)
+			f.DeleteSecret(cred.ObjectMeta)
+		})
+
+		Context(`"Local" backend`, func() {
+			BeforeEach(func() {
+				cred = f.SecretForLocalBackend()
+				restic = f.ResticForLocalBackend()
+			})
+			It(`should elect leader and backup new RC`, shouldElectLeaderAndBackupRC)
+		})
+	})
+
 	Describe("Stash Webhook for", func() {
 		BeforeEach(func() {
 			if !f.WebhookEnabled {
@@ -525,10 +570,10 @@ var _ = Describe("DaemonSet", func() {
 			}
 		})
 		AfterEach(func() {
-			f.DeleteDaemonSet(daemon.ObjectMeta)
+			f.DeleteReplicationController(rc.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
-			f.DeleteRestic(secondRestic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
+			f.DeleteRestic(secondRestic.ObjectMeta)
 		})
 
 		Context(`"Local" backend`, func() {
@@ -538,9 +583,9 @@ var _ = Describe("DaemonSet", func() {
 				secondRestic = restic
 				secondRestic.Name = "second-restic"
 			})
-			It("should mutate and backup new DaemonSet", shouldMutateAndBackupNewDaemonSet)
-			It("should not mutate new DaemonSet if no restic select it", shouldNotMutateNewDaemonSet)
-			It("should reject to create new DaemonSet if multiple restic select it", shouldRejectToCreateNewDaemonSet)
+			It("should mutate and backup new ReplicationController", shouldMutateAndBackupNewReplicationController)
+			It("should not mutate new ReplicationController if no restic select it", shouldNotMutateNewReplicationController)
+			It("should reject to create new ReplicationController if multiple restic select it", shouldRejectToCreateNewReplicationController)
 			It("should remove sidecar instantly if label change to match no restic", shouldRemoveSidecarInstantly)
 			It("should add sidecar instantly if label change to match single restic", shouldAddSidecarInstantly)
 		})
@@ -548,26 +593,30 @@ var _ = Describe("DaemonSet", func() {
 
 	Describe("Offline backup for", func() {
 		AfterEach(func() {
-			f.DeleteDaemonSet(daemon.ObjectMeta)
+			f.DeleteReplicationController(rc.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 			framework.CleanupMinikubeHostPath()
 		})
 
-		Context(`"Local" backend`, func() {
+		Context(`Single Replica`, func() {
 			BeforeEach(func() {
 				cred = f.SecretForLocalBackend()
 				restic = f.ResticForHostPathLocalBackend()
 				restic.Spec.Type = api.BackupOffline
 				restic.Spec.Schedule = "*/5 * * * *"
 			})
-			It(`should backup new DaemonSet`, func() {
+			It(`should backup new RC`, func() {
 				By("Creating repository Secret " + cred.Name)
 				err = f.CreateSecret(cred)
 				Expect(err).NotTo(HaveOccurred())
 
 				By("Creating restic " + restic.Name)
 				err = f.CreateRestic(restic)
+				Expect(err).NotTo(HaveOccurred())
+
+				By("Creating ReplicationController " + rc.Name)
+				_, err = f.CreateReplicationController(rc)
 				Expect(err).NotTo(HaveOccurred())
 
 				cronJobName := util.ScaledownCronPrefix + restic.Name
@@ -577,25 +626,75 @@ var _ = Describe("DaemonSet", func() {
 					return err
 				}).Should(BeNil())
 
-				By("Creating DaemonSet " + daemon.Name)
-				_, err = f.CreateDaemonSet(daemon)
-				Expect(err).NotTo(HaveOccurred())
+				By("Waiting for scale down replication controller to 0 replica")
+				f.EventuallyReplicationController(rc.ObjectMeta).Should(HaveReplica(0))
+
+				By("Wating for scale up replication controller to 1 replica")
+				f.EventuallyReplicationController(rc.ObjectMeta).Should(HaveReplica(1))
 
 				By("Waiting for init-container")
-				f.EventuallyDaemonSet(daemon.ObjectMeta).Should(HaveInitContainer(util.StashContainer))
+				f.EventuallyReplicationController(rc.ObjectMeta).Should(HaveInitContainer(util.StashContainer))
 
-				By("Waiting for initial backup to complete")
+				By("Waiting for backup to complete")
 				f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
 					return r.Status.BackupCount
 				}, BeNumerically(">=", 1)))
 
-				By("Waiting for next backup to complete")
+				By("Waiting for backup event")
+				f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">=", 1)))
+
+				By("Waiting for scale up replication controller to original replica")
+				f.EventuallyReplicationController(rc.ObjectMeta).Should(HaveReplica(int(*rc.Spec.Replicas)))
+			})
+		})
+
+		Context("Multiple Replica", func() {
+			BeforeEach(func() {
+				cred = f.SecretForLocalBackend()
+				restic = f.ResticForHostPathLocalBackend()
+				restic.Spec.Type = api.BackupOffline
+				restic.Spec.Schedule = "*/5 * * * *"
+			})
+			It(`should backup new Replication Controller`, func() {
+				By("Creating repository Secret " + cred.Name)
+				err = f.CreateSecret(cred)
+				Expect(err).NotTo(HaveOccurred())
+
+				By("Creating restic " + restic.Name)
+				err = f.CreateRestic(restic)
+				Expect(err).NotTo(HaveOccurred())
+
+				By("Creating replication controller " + rc.Name)
+				rc.Spec.Replicas = types.Int32P(3)
+				_, err = f.CreateReplicationController(rc)
+				Expect(err).NotTo(HaveOccurred())
+
+				cronJobName := util.ScaledownCronPrefix + restic.Name
+				By("Checking cron job created: " + cronJobName)
+				Eventually(func() error {
+					_, err := f.KubeClient.BatchV1beta1().CronJobs(restic.Namespace).Get(cronJobName, metav1.GetOptions{})
+					return err
+				}).Should(BeNil())
+
+				By("Waiting for scale replication controller to 0 replica")
+				f.EventuallyReplicationController(rc.ObjectMeta).Should(HaveReplica(0))
+
+				By("Wating for scale up replication controller to 1 replica")
+				f.EventuallyReplicationController(rc.ObjectMeta).Should(HaveReplica(1))
+
+				By("Waiting for init-container")
+				f.EventuallyReplicationController(rc.ObjectMeta).Should(HaveInitContainer(util.StashContainer))
+
+				By("Waiting for backup to complete")
 				f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
 					return r.Status.BackupCount
-				}, BeNumerically(">=", 2)))
+				}, BeNumerically(">=", 1)))
 
 				By("Waiting for backup event")
-				f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">", 1)))
+				f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">=", 1)))
+
+				By("Waiting for scale up replication controller to original replica")
+				f.EventuallyReplicationController(rc.ObjectMeta).Should(HaveReplica(int(*rc.Spec.Replicas)))
 			})
 		})
 	})
@@ -603,7 +702,7 @@ var _ = Describe("DaemonSet", func() {
 	Describe("Pause Restic to stop backup", func() {
 		Context(`"Local" backend`, func() {
 			AfterEach(func() {
-				f.DeleteDaemonSet(daemon.ObjectMeta)
+				f.DeleteReplicationController(rc.ObjectMeta)
 				f.DeleteRestic(restic.ObjectMeta)
 				f.DeleteSecret(cred.ObjectMeta)
 			})
@@ -616,16 +715,16 @@ var _ = Describe("DaemonSet", func() {
 				err = f.CreateSecret(cred)
 				Expect(err).NotTo(HaveOccurred())
 
-				By("Creating restic")
+				By("Creating restic " + restic.Name)
 				err = f.CreateRestic(restic)
 				Expect(err).NotTo(HaveOccurred())
 
-				By("Creating Daemonset " + daemon.Name)
-				_, err = f.CreateDaemonSet(daemon)
+				By("Creating ReplicationController " + rc.Name)
+				_, err = f.CreateReplicationController(rc)
 				Expect(err).NotTo(HaveOccurred())
 
 				By("Waiting for sidecar")
-				f.EventuallyDaemonSet(daemon.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+				f.EventuallyReplicationController(rc.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 				By("Waiting for backup to complete")
 				f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {

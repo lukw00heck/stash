@@ -1,7 +1,8 @@
-package e2e_test
+package e2e
 
 import (
 	"flag"
+	"fmt"
 	"path/filepath"
 
 	"github.com/appscode/go/flags"
@@ -27,6 +28,7 @@ var (
 )
 
 func init() {
+	fmt.Println("xyzzzzzzzzzzzzz")
 	options.StashImageTag = TestStashImageTag
 	options.AddGoFlags(flag.CommandLine)
 	flag.StringVar(&options.KubeConfig, "kubeconfig", "", "Path to kubeconfig file with authorization information (the master location is set by the master flag).")

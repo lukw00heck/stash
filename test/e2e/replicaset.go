@@ -1,33 +1,29 @@
-package e2e_test
+package e2e
 
 import (
-	"io/ioutil"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/appscode/go/types"
-	apps_util "github.com/appscode/kutil/apps/v1beta1"
+	ext_util "github.com/appscode/kutil/extensions/v1beta1"
 	api "github.com/appscode/stash/apis/stash/v1alpha1"
 	"github.com/appscode/stash/pkg/util"
 	"github.com/appscode/stash/test/e2e/framework"
 	. "github.com/appscode/stash/test/e2e/matcher"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	apps "k8s.io/api/apps/v1beta1"
 	core "k8s.io/api/core/v1"
-	kerr "k8s.io/apimachinery/pkg/api/errors"
+	extensions "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var _ = Describe("Deployment", func() {
+var _ = Describe("ReplicaSet", func() {
 	var (
 		err          error
 		f            *framework.Invocation
 		restic       api.Restic
 		secondRestic api.Restic
 		cred         core.Secret
-		deployment   apps.Deployment
+		rs           extensions.ReplicaSet
 		recovery     api.Recovery
 	)
 
@@ -44,11 +40,11 @@ var _ = Describe("Deployment", func() {
 		restic.Spec.Backend.StorageSecretName = cred.Name
 		secondRestic.Spec.Backend.StorageSecretName = cred.Name
 		recovery.Spec.Backend.StorageSecretName = cred.Name
-		deployment = f.Deployment()
+		rs = f.ReplicaSet()
 	})
 
 	var (
-		shouldBackupNewDeployment = func() {
+		shouldBackupNewReplicaSet = func() {
 			By("Creating repository Secret " + cred.Name)
 			err = f.CreateSecret(cred)
 			Expect(err).NotTo(HaveOccurred())
@@ -57,12 +53,12 @@ var _ = Describe("Deployment", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating Deployment " + deployment.Name)
-			_, err = f.CreateDeployment(deployment)
+			By("Creating ReplicaSet " + rs.Name)
+			_, err = f.CreateReplicaSet(rs)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for sidecar")
-			f.EventuallyDeployment(deployment.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+			f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 			By("Waiting for backup to complete")
 			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
@@ -73,13 +69,13 @@ var _ = Describe("Deployment", func() {
 			f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">=", 1)))
 		}
 
-		shouldBackupExistingDeployment = func() {
+		shouldBackupExistingReplicaSet = func() {
 			By("Creating repository Secret " + cred.Name)
 			err = f.CreateSecret(cred)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating Deployment " + deployment.Name)
-			_, err = f.CreateDeployment(deployment)
+			By("Creating ReplicaSet " + rs.Name)
+			_, err = f.CreateReplicaSet(rs)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Creating restic " + restic.Name)
@@ -87,7 +83,7 @@ var _ = Describe("Deployment", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for sidecar")
-			f.EventuallyDeployment(deployment.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+			f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 			By("Waiting for backup to complete")
 			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
@@ -107,12 +103,12 @@ var _ = Describe("Deployment", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating Deployment " + deployment.Name)
-			_, err = f.CreateDeployment(deployment)
+			By("Creating ReplicaSet " + rs.Name)
+			_, err = f.CreateReplicaSet(rs)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for sidecar")
-			f.EventuallyDeployment(deployment.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+			f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 			By("Waiting for backup to complete")
 			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
@@ -122,8 +118,7 @@ var _ = Describe("Deployment", func() {
 			By("Deleting restic " + restic.Name)
 			f.DeleteRestic(restic.ObjectMeta)
 
-			By("Waiting to remove sidecar")
-			f.EventuallyDeployment(deployment.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
+			f.EventuallyReplicaSet(rs.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
 		}
 
 		shouldStopBackupIfLabelChanged = func() {
@@ -135,20 +130,20 @@ var _ = Describe("Deployment", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating Deployment " + deployment.Name)
-			_, err = f.CreateDeployment(deployment)
+			By("Creating ReplicaSet " + rs.Name)
+			_, err = f.CreateReplicaSet(rs)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for sidecar")
-			f.EventuallyDeployment(deployment.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+			f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 			By("Waiting for backup to complete")
 			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
 				return r.Status.BackupCount
 			}, BeNumerically(">=", 1)))
 
-			By("Removing labels of Deployment " + deployment.Name)
-			_, _, err = apps_util.PatchDeployment(f.KubeClient, &deployment, func(in *apps.Deployment) *apps.Deployment {
+			By("Removing labels of ReplicaSet " + rs.Name)
+			_, _, err = ext_util.PatchReplicaSet(f.KubeClient, &rs, func(in *extensions.ReplicaSet) *extensions.ReplicaSet {
 				in.Labels = map[string]string{
 					"app": "unmatched",
 				}
@@ -156,7 +151,7 @@ var _ = Describe("Deployment", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			f.EventuallyDeployment(deployment.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
+			f.EventuallyReplicaSet(rs.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
 		}
 
 		shouldStopBackupIfSelectorChanged = func() {
@@ -168,12 +163,12 @@ var _ = Describe("Deployment", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating Deployment " + deployment.Name)
-			_, err = f.CreateDeployment(deployment)
+			By("Creating ReplicaSet " + rs.Name)
+			_, err = f.CreateReplicaSet(rs)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for sidecar")
-			f.EventuallyDeployment(deployment.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+			f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 			By("Waiting for backup to complete")
 			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
@@ -191,15 +186,14 @@ var _ = Describe("Deployment", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			f.EventuallyDeployment(deployment.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
+			f.EventuallyReplicaSet(rs.ObjectMeta).ShouldNot(HaveSidecar(util.StashContainer))
 		}
 
-		shouldRestoreDeployment = func() {
-			shouldBackupNewDeployment()
-
+		shouldRestoreReplicaSet = func() {
+			shouldBackupNewReplicaSet()
 			recovery.Spec.Workload = api.LocalTypedReference{
-				Kind: api.KindDeployment,
-				Name: deployment.Name,
+				Kind: api.KindReplicaSet,
+				Name: rs.Name,
 			}
 
 			By("Creating recovery " + recovery.Name)
@@ -209,7 +203,7 @@ var _ = Describe("Deployment", func() {
 			f.EventuallyRecoverySucceed(recovery.ObjectMeta).Should(BeTrue())
 		}
 
-		shouldElectLeaderAndBackupDeployment = func() {
+		shouldElectLeaderAndBackupRS = func() {
 			By("Creating repository Secret " + cred.Name)
 			err = f.CreateSecret(cred)
 			Expect(err).NotTo(HaveOccurred())
@@ -218,15 +212,15 @@ var _ = Describe("Deployment", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			deployment.Spec.Replicas = types.Int32P(2) // two replicas
-			By("Creating Deployment " + deployment.Name)
-			_, err = f.CreateDeployment(deployment)
+			rs.Spec.Replicas = types.Int32P(2) // two replicas
+			By("Creating ReplicaSet " + rs.Name)
+			_, err = f.CreateReplicaSet(rs)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for sidecar")
-			f.EventuallyDeployment(deployment.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+			f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
-			f.CheckLeaderElection(deployment.ObjectMeta, api.KindDeployment)
+			f.CheckLeaderElection(rs.ObjectMeta, api.KindReplicaSet)
 
 			By("Waiting for backup to complete")
 			f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
@@ -237,7 +231,7 @@ var _ = Describe("Deployment", func() {
 			f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">=", 1)))
 		}
 
-		shouldMutateAndBackupNewDeployment = func() {
+		shouldMutateAndBackupNewReplicaSet = func() {
 			By("Creating repository Secret " + cred.Name)
 			err = f.CreateSecret(cred)
 			Expect(err).NotTo(HaveOccurred())
@@ -246,11 +240,11 @@ var _ = Describe("Deployment", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating Deployment " + deployment.Name)
-			obj, err := f.CreateDeployment(deployment)
+			By("Creating ReplicaSet " + rs.Name)
+			obj, err := f.CreateReplicaSet(rs)
 			Expect(err).NotTo(HaveOccurred())
 
-			// sidecar should be added as soon as deployment created, we don't need to wait for it
+			// sidecar should be added as soon as rs created, we don't need to wait for it
 			By("Checking sidecar created")
 			Expect(obj).Should(HaveSidecar(util.StashContainer))
 
@@ -263,20 +257,20 @@ var _ = Describe("Deployment", func() {
 			f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">=", 1)))
 		}
 
-		shouldNotMutateNewDeployment = func() {
+		shouldNotMutateNewReplicaSet = func() {
 			By("Creating repository Secret " + cred.Name)
 			err = f.CreateSecret(cred)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating Deployment " + deployment.Name)
-			obj, err := f.CreateDeployment(deployment)
+			By("Creating ReplicaSet " + rs.Name)
+			obj, err := f.CreateReplicaSet(rs)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking sidecar not added")
 			Expect(obj).ShouldNot(HaveSidecar(util.StashContainer))
 		}
 
-		shouldRejectToCreateNewDeployment = func() {
+		shouldRejectToCreateNewReplicaSet = func() {
 			By("Creating repository Secret " + cred.Name)
 			err = f.CreateSecret(cred)
 			Expect(err).NotTo(HaveOccurred())
@@ -289,8 +283,8 @@ var _ = Describe("Deployment", func() {
 			err = f.CreateRestic(secondRestic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating Deployment " + deployment.Name)
-			_, err := f.CreateDeployment(deployment)
+			By("Creating ReplicaSet " + rs.Name)
+			_, err := f.CreateReplicaSet(rs)
 			Expect(err).To(HaveOccurred())
 		}
 
@@ -303,8 +297,8 @@ var _ = Describe("Deployment", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating Deployment " + deployment.Name)
-			obj, err := f.CreateDeployment(deployment)
+			By("Creating ReplicaSet " + rs.Name)
+			obj, err := f.CreateReplicaSet(rs)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking sidecar added")
@@ -315,8 +309,8 @@ var _ = Describe("Deployment", func() {
 				return r.Status.BackupCount
 			}, BeNumerically(">=", 1)))
 
-			By("Removing labels of Deployment " + deployment.Name)
-			obj, _, err = apps_util.PatchDeployment(f.KubeClient, &deployment, func(in *apps.Deployment) *apps.Deployment {
+			By("Removing labels of ReplicaSet " + rs.Name)
+			obj, _, err = ext_util.PatchReplicaSet(f.KubeClient, &rs, func(in *extensions.ReplicaSet) *extensions.ReplicaSet {
 				in.Labels = map[string]string{
 					"app": "unmatched",
 				}
@@ -337,19 +331,19 @@ var _ = Describe("Deployment", func() {
 			err = f.CreateRestic(restic)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Creating Deployment " + deployment.Name)
-			previousLabel := deployment.Labels
-			deployment.Labels = map[string]string{
+			By("Creating ReplicaSet " + rs.Name)
+			previousLabel := rs.Labels
+			rs.Labels = map[string]string{
 				"app": "unmatched",
 			}
-			obj, err := f.CreateDeployment(deployment)
+			obj, err := f.CreateReplicaSet(rs)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking sidecar not added")
 			Expect(obj).ShouldNot(HaveSidecar(util.StashContainer))
 
-			By("Adding label to match restic" + deployment.Name)
-			obj, _, err = apps_util.PatchDeployment(f.KubeClient, &deployment, func(in *apps.Deployment) *apps.Deployment {
+			By("Adding label to match restic" + rs.Name)
+			obj, _, err = ext_util.PatchReplicaSet(f.KubeClient, &rs, func(in *extensions.ReplicaSet) *extensions.ReplicaSet {
 				in.Labels = previousLabel
 				return in
 			})
@@ -363,40 +357,11 @@ var _ = Describe("Deployment", func() {
 				return r.Status.BackupCount
 			}, BeNumerically(">=", 1)))
 		}
-
-		shouldDeleteJobAndDependents = func(jobName, namespace string) {
-			By("Checking Job deleted")
-			Eventually(func() bool {
-				_, err := f.KubeClient.BatchV1().Jobs(recovery.Namespace).Get(jobName, metav1.GetOptions{})
-				return kerr.IsNotFound(err) || kerr.IsGone(err)
-			}, time.Minute*3, time.Second*2).Should(BeTrue())
-
-			By("Checking pods deleted")
-			Eventually(func() bool {
-				pods, err := f.KubeClient.CoreV1().Pods(recovery.Namespace).List(metav1.ListOptions{
-					LabelSelector: "job-name=" + jobName, // pods created by job has a job-name label
-				})
-				Expect(err).NotTo(HaveOccurred())
-				return len(pods.Items) == 0
-			}, time.Minute*3, time.Second*2).Should(BeTrue())
-
-			By("Checking service-account deleted")
-			Eventually(func() bool {
-				_, err := f.KubeClient.CoreV1().ServiceAccounts(recovery.Namespace).Get(jobName, metav1.GetOptions{})
-				return kerr.IsNotFound(err) || kerr.IsGone(err)
-			}, time.Minute*3, time.Second*2).Should(BeTrue())
-
-			By("Checking role-binding deleted")
-			Eventually(func() bool {
-				_, err := f.KubeClient.RbacV1().RoleBindings(recovery.Namespace).Get(jobName, metav1.GetOptions{})
-				return kerr.IsNotFound(err) || kerr.IsGone(err)
-			}, time.Minute*3, time.Second*2).Should(BeTrue())
-		}
 	)
 
 	Describe("Creating restic for", func() {
 		AfterEach(func() {
-			f.DeleteDeployment(deployment.ObjectMeta)
+			f.DeleteReplicaSet(rs.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 		})
@@ -406,8 +371,8 @@ var _ = Describe("Deployment", func() {
 				cred = f.SecretForLocalBackend()
 				restic = f.ResticForLocalBackend()
 			})
-			It(`should backup new Deployment`, shouldBackupNewDeployment)
-			It(`should backup existing Deployment`, shouldBackupExistingDeployment)
+			It(`should backup new ReplicaSet`, shouldBackupNewReplicaSet)
+			It(`should backup existing ReplicaSet`, shouldBackupExistingReplicaSet)
 		})
 
 		Context(`"S3" backend`, func() {
@@ -415,8 +380,8 @@ var _ = Describe("Deployment", func() {
 				cred = f.SecretForS3Backend()
 				restic = f.ResticForS3Backend()
 			})
-			It(`should backup new Deployment`, shouldBackupNewDeployment)
-			It(`should backup existing Deployment`, shouldBackupExistingDeployment)
+			It(`should backup new ReplicaSet`, shouldBackupNewReplicaSet)
+			It(`should backup existing ReplicaSet`, shouldBackupExistingReplicaSet)
 		})
 
 		Context(`"DO" backend`, func() {
@@ -424,8 +389,8 @@ var _ = Describe("Deployment", func() {
 				cred = f.SecretForDOBackend()
 				restic = f.ResticForDOBackend()
 			})
-			It(`should backup new Deployment`, shouldBackupNewDeployment)
-			It(`should backup existing Deployment`, shouldBackupExistingDeployment)
+			It(`should backup new ReplicaSet`, shouldBackupNewReplicaSet)
+			It(`should backup existing ReplicaSet`, shouldBackupExistingReplicaSet)
 		})
 
 		Context(`"GCS" backend`, func() {
@@ -433,8 +398,8 @@ var _ = Describe("Deployment", func() {
 				cred = f.SecretForGCSBackend()
 				restic = f.ResticForGCSBackend()
 			})
-			It(`should backup new Deployment`, shouldBackupNewDeployment)
-			It(`should backup existing Deployment`, shouldBackupExistingDeployment)
+			It(`should backup new ReplicaSet`, shouldBackupNewReplicaSet)
+			It(`should backup existing ReplicaSet`, shouldBackupExistingReplicaSet)
 		})
 
 		Context(`"Azure" backend`, func() {
@@ -442,8 +407,8 @@ var _ = Describe("Deployment", func() {
 				cred = f.SecretForAzureBackend()
 				restic = f.ResticForAzureBackend()
 			})
-			It(`should backup new Deployment`, shouldBackupNewDeployment)
-			It(`should backup existing Deployment`, shouldBackupExistingDeployment)
+			It(`should backup new ReplicaSet`, shouldBackupNewReplicaSet)
+			It(`should backup existing ReplicaSet`, shouldBackupExistingReplicaSet)
 		})
 
 		Context(`"Swift" backend`, func() {
@@ -451,8 +416,8 @@ var _ = Describe("Deployment", func() {
 				cred = f.SecretForSwiftBackend()
 				restic = f.ResticForSwiftBackend()
 			})
-			It(`should backup new Deployment`, shouldBackupNewDeployment)
-			It(`should backup existing Deployment`, shouldBackupExistingDeployment)
+			It(`should backup new ReplicaSet`, shouldBackupNewReplicaSet)
+			It(`should backup existing ReplicaSet`, shouldBackupExistingReplicaSet)
 		})
 
 		Context(`"B2" backend`, func() {
@@ -460,14 +425,14 @@ var _ = Describe("Deployment", func() {
 				cred = f.SecretForB2Backend()
 				restic = f.ResticForB2Backend()
 			})
-			It(`should backup new Deployment`, shouldBackupNewDeployment)
-			It(`should backup existing Deployment`, shouldBackupExistingDeployment)
+			It(`should backup new ReplicaSet`, shouldBackupNewReplicaSet)
+			It(`should backup existing ReplicaSet`, shouldBackupExistingReplicaSet)
 		})
 	})
 
-	Describe("Changing Deployment labels", func() {
+	Describe("Changing ReplicaSet labels", func() {
 		AfterEach(func() {
-			f.DeleteDeployment(deployment.ObjectMeta)
+			f.DeleteReplicaSet(rs.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 		})
@@ -480,7 +445,7 @@ var _ = Describe("Deployment", func() {
 
 	Describe("Changing Restic selector", func() {
 		AfterEach(func() {
-			f.DeleteDeployment(deployment.ObjectMeta)
+			f.DeleteReplicaSet(rs.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 		})
@@ -493,7 +458,7 @@ var _ = Describe("Deployment", func() {
 
 	Describe("Deleting restic for", func() {
 		AfterEach(func() {
-			f.DeleteDeployment(deployment.ObjectMeta)
+			f.DeleteReplicaSet(rs.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 		})
 
@@ -556,7 +521,7 @@ var _ = Describe("Deployment", func() {
 
 	Describe("Creating recovery for", func() {
 		AfterEach(func() {
-			f.DeleteDeployment(deployment.ObjectMeta)
+			f.DeleteReplicaSet(rs.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 			f.DeleteRecovery(recovery.ObjectMeta)
@@ -569,12 +534,7 @@ var _ = Describe("Deployment", func() {
 				restic = f.ResticForHostPathLocalBackend()
 				recovery = f.RecoveryForRestic(restic)
 			})
-			It(`should restore local deployment backup and cleanup dependents`, func() {
-				By("Checking recovery successful")
-				shouldRestoreDeployment()
-				By("Checking cleanup")
-				shouldDeleteJobAndDependents(util.RecoveryJobPrefix+recovery.Name, recovery.Namespace)
-			})
+			It(`should restore local replicaset backup`, shouldRestoreReplicaSet)
 		})
 
 		Context(`"S3" backend`, func() {
@@ -583,56 +543,13 @@ var _ = Describe("Deployment", func() {
 				restic = f.ResticForS3Backend()
 				recovery = f.RecoveryForRestic(restic)
 			})
-			It(`should restore s3 deployment backup`, shouldRestoreDeployment)
-		})
-	})
-
-	Describe("Recovery as job's owner-ref", func() {
-		AfterEach(func() {
-			f.DeleteDeployment(deployment.ObjectMeta)
-			f.DeleteRestic(restic.ObjectMeta)
-			f.DeleteSecret(cred.ObjectMeta)
-			f.DeleteRecovery(recovery.ObjectMeta)
-			framework.CleanupMinikubeHostPath()
-		})
-
-		Context(`"Local" backend`, func() {
-			BeforeEach(func() {
-				cred = f.SecretForLocalBackend()
-				restic = f.ResticForHostPathLocalBackend()
-				recovery = f.RecoveryForRestic(restic)
-			})
-			It(`should delete job after recovery deleted`, func() {
-				recovery.Spec.Workload = api.LocalTypedReference{
-					Kind: api.KindDeployment,
-					Name: deployment.Name,
-				}
-
-				By("Creating recovery " + recovery.Name)
-				err = f.CreateRecovery(recovery)
-				Expect(err).NotTo(HaveOccurred())
-
-				jobName := util.RecoveryJobPrefix + recovery.Name
-
-				By("Checking Job exists")
-				Eventually(func() bool {
-					_, err := f.KubeClient.BatchV1().Jobs(recovery.Namespace).Get(jobName, metav1.GetOptions{})
-					return err == nil
-				}, time.Minute*3, time.Second*2).Should(BeTrue())
-
-				By("Deleting recovery " + recovery.Name)
-				err = f.DeleteRecovery(recovery.ObjectMeta)
-				Expect(err).NotTo(HaveOccurred())
-
-				By("Checking cleanup")
-				shouldDeleteJobAndDependents(jobName, recovery.Namespace)
-			})
+			It(`should restore s3 replicaset backup`, shouldRestoreReplicaSet)
 		})
 	})
 
 	Describe("Leader election for", func() {
 		AfterEach(func() {
-			f.DeleteDeployment(deployment.ObjectMeta)
+			f.DeleteReplicaSet(rs.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 		})
@@ -642,7 +559,7 @@ var _ = Describe("Deployment", func() {
 				cred = f.SecretForLocalBackend()
 				restic = f.ResticForLocalBackend()
 			})
-			It(`should elect leader and backup new Deployment`, shouldElectLeaderAndBackupDeployment)
+			It(`should elect leader and backup new RS`, shouldElectLeaderAndBackupRS)
 		})
 	})
 
@@ -653,7 +570,7 @@ var _ = Describe("Deployment", func() {
 			}
 		})
 		AfterEach(func() {
-			f.DeleteDeployment(deployment.ObjectMeta)
+			f.DeleteReplicaSet(rs.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteRestic(secondRestic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
@@ -666,17 +583,16 @@ var _ = Describe("Deployment", func() {
 				secondRestic = restic
 				secondRestic.Name = "second-restic"
 			})
-			It("should mutate and backup new Deployment", shouldMutateAndBackupNewDeployment)
-			It("should not mutate new Deployment if no restic select it", shouldNotMutateNewDeployment)
-			It("should reject to create new Deployment if multiple restic select it", shouldRejectToCreateNewDeployment)
+			It("should mutate and backup new ReplicaSet", shouldMutateAndBackupNewReplicaSet)
+			It("should not mutate new ReplicaSet if no restic select it", shouldNotMutateNewReplicaSet)
+			It("should reject to create new ReplicaSet if multiple restic select it", shouldRejectToCreateNewReplicaSet)
 			It("should remove sidecar instantly if label change to match no restic", shouldRemoveSidecarInstantly)
 			It("should add sidecar instantly if label change to match single restic", shouldAddSidecarInstantly)
 		})
 	})
-
 	Describe("Offline backup for", func() {
 		AfterEach(func() {
-			f.DeleteDeployment(deployment.ObjectMeta)
+			f.DeleteReplicaSet(rs.ObjectMeta)
 			f.DeleteRestic(restic.ObjectMeta)
 			f.DeleteSecret(cred.ObjectMeta)
 			framework.CleanupMinikubeHostPath()
@@ -689,7 +605,7 @@ var _ = Describe("Deployment", func() {
 				restic.Spec.Type = api.BackupOffline
 				restic.Spec.Schedule = "*/5 * * * *"
 			})
-			It(`should backup new Deployment`, func() {
+			It(`should backup new ReplicaSet`, func() {
 				By("Creating repository Secret " + cred.Name)
 				err = f.CreateSecret(cred)
 				Expect(err).NotTo(HaveOccurred())
@@ -698,8 +614,8 @@ var _ = Describe("Deployment", func() {
 				err = f.CreateRestic(restic)
 				Expect(err).NotTo(HaveOccurred())
 
-				By("Creating Deployment " + deployment.Name)
-				_, err = f.CreateDeployment(deployment)
+				By("Creating ReplicaSet " + rs.Name)
+				_, err = f.CreateReplicaSet(rs)
 				Expect(err).NotTo(HaveOccurred())
 
 				cronJobName := util.ScaledownCronPrefix + restic.Name
@@ -709,14 +625,14 @@ var _ = Describe("Deployment", func() {
 					return err
 				}).Should(BeNil())
 
-				By("Waiting for scale down deployment to 0 replica")
-				f.EventuallyDeployment(deployment.ObjectMeta).Should(HaveReplica(0))
+				By("Waiting for scale down rs to 0 replica")
+				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveReplica(0))
 
-				By("Wating for scale up deployment to 1 replica")
-				f.EventuallyDeployment(deployment.ObjectMeta).Should(HaveReplica(1))
+				By("Wating for scale up rs to 1 replica")
+				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveReplica(1))
 
 				By("Waiting for init-container")
-				f.EventuallyDeployment(deployment.ObjectMeta).Should(HaveInitContainer(util.StashContainer))
+				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveInitContainer(util.StashContainer))
 
 				By("Waiting for backup to complete")
 				f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
@@ -726,8 +642,8 @@ var _ = Describe("Deployment", func() {
 				By("Waiting for backup event")
 				f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">=", 1)))
 
-				By("Waiting for scale up deployment to original replica")
-				f.EventuallyDeployment(deployment.ObjectMeta).Should(HaveReplica(int(*deployment.Spec.Replicas)))
+				By("Waiting for scale up rs to original replica")
+				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveReplica(int(*rs.Spec.Replicas)))
 			})
 		})
 
@@ -738,7 +654,7 @@ var _ = Describe("Deployment", func() {
 				restic.Spec.Type = api.BackupOffline
 				restic.Spec.Schedule = "*/5 * * * *"
 			})
-			It(`should backup new Deployment`, func() {
+			It(`should backup new ReplicaSet`, func() {
 				By("Creating repository Secret " + cred.Name)
 				err = f.CreateSecret(cred)
 				Expect(err).NotTo(HaveOccurred())
@@ -747,9 +663,9 @@ var _ = Describe("Deployment", func() {
 				err = f.CreateRestic(restic)
 				Expect(err).NotTo(HaveOccurred())
 
-				By("Creating Deployment " + deployment.Name)
-				deployment.Spec.Replicas = types.Int32P(3)
-				_, err = f.CreateDeployment(deployment)
+				By("Creating ReplicaSet " + rs.Name)
+				rs.Spec.Replicas = types.Int32P(3)
+				_, err = f.CreateReplicaSet(rs)
 				Expect(err).NotTo(HaveOccurred())
 
 				cronJobName := util.ScaledownCronPrefix + restic.Name
@@ -759,14 +675,14 @@ var _ = Describe("Deployment", func() {
 					return err
 				}).Should(BeNil())
 
-				By("Waiting for scale down deployment to 0 replica")
-				f.EventuallyDeployment(deployment.ObjectMeta).Should(HaveReplica(0))
+				By("Waiting for scale down rs to 0 replica")
+				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveReplica(0))
 
-				By("Wating for scale up deployment to 1 replica")
-				f.EventuallyDeployment(deployment.ObjectMeta).Should(HaveReplica(1))
+				By("Wating for scale up rs to 1 replica")
+				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveReplica(1))
 
 				By("Waiting for init-container")
-				f.EventuallyDeployment(deployment.ObjectMeta).Should(HaveInitContainer(util.StashContainer))
+				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveInitContainer(util.StashContainer))
 
 				By("Waiting for backup to complete")
 				f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
@@ -776,143 +692,16 @@ var _ = Describe("Deployment", func() {
 				By("Waiting for backup event")
 				f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">=", 1)))
 
-				By("Waiting for scale up deployment to original replica")
-				f.EventuallyDeployment(deployment.ObjectMeta).Should(HaveReplica(int(*deployment.Spec.Replicas)))
+				By("Waiting for scale up rs to original replica")
+				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveReplica(int(*rs.Spec.Replicas)))
 			})
 		})
-	})
-
-	Describe("No retention policy", func() {
-		AfterEach(func() {
-			f.DeleteDeployment(deployment.ObjectMeta)
-			f.DeleteRestic(restic.ObjectMeta)
-			f.DeleteSecret(cred.ObjectMeta)
-		})
-
-		Context(`"Local" backend`, func() {
-			BeforeEach(func() {
-				cred = f.SecretForLocalBackend()
-				restic = f.ResticForLocalBackend()
-				restic.Spec.FileGroups[0].RetentionPolicyName = ""
-				restic.Spec.RetentionPolicies = []api.RetentionPolicy{}
-			})
-			It(`should backup new Deployment`, shouldBackupNewDeployment)
-		})
-	})
-	Describe("Minio server", func() {
-		AfterEach(func() {
-			f.DeleteDeployment(deployment.ObjectMeta)
-			f.DeleteRestic(restic.ObjectMeta)
-			f.DeleteSecret(cred.ObjectMeta)
-			f.DeleteMinioServer()
-		})
-		Context("With cacert", func() {
-			BeforeEach(func() {
-				By("Creating Minio server with cacert")
-				addrs, err := f.CreateMinioServer()
-				Expect(err).NotTo(HaveOccurred())
-
-				restic = f.ResticForMinioBackend("https://" + addrs)
-				cred = f.SecretForMinioBackend(true)
-
-			})
-
-			It("Should backup new Deployment", func() {
-				By("Creating repository Secret " + cred.Name)
-				err = f.CreateSecret(cred)
-				Expect(err).NotTo(HaveOccurred())
-
-				By("Creating restic")
-				err = f.CreateRestic(restic)
-				Expect(err).NotTo(HaveOccurred())
-
-				By("Creating Deployment " + deployment.Name)
-				_, err = f.CreateDeployment(deployment)
-				Expect(err).NotTo(HaveOccurred())
-
-				By("Waiting for sidecar")
-				f.EventuallyDeployment(deployment.ObjectMeta).Should(HaveSidecar(util.StashContainer))
-
-				By("Waiting for backup to complete")
-				f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
-					return r.Status.BackupCount
-				}, BeNumerically(">=", 1)))
-
-				By("Waiting for backup event")
-				f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically(">=", 1)))
-
-			})
-		})
-		Context("Without cacert", func() {
-			BeforeEach(func() {
-				By("Creating Minio server with cacert")
-				addrs, err := f.CreateMinioServer()
-				Expect(err).NotTo(HaveOccurred())
-
-				restic = f.ResticForMinioBackend("https://" + addrs)
-				cred = f.SecretForMinioBackend(false)
-
-			})
-
-			It("Should fail to backup new Deployment", func() {
-				By("Creating repository Secret " + cred.Name)
-				err = f.CreateSecret(cred)
-				Expect(err).NotTo(HaveOccurred())
-
-				By("Creating restic without cacert")
-				err = f.CreateRestic(restic)
-				Expect(err).NotTo(HaveOccurred())
-
-				By("Creating Deployment " + deployment.Name)
-				_, err = f.CreateDeployment(deployment)
-				Expect(err).NotTo(HaveOccurred())
-
-				By("Waiting for sidecar")
-				f.EventuallyDeployment(deployment.ObjectMeta).Should(HaveSidecar(util.StashContainer))
-
-				By("Waiting to count failed setup event")
-				f.EventualWarning(restic.ObjectMeta).Should(WithTransform(f.CountFailedSetup, BeNumerically(">=", 1)))
-
-				By("Waiting to count successful backup event")
-				f.EventualEvent(restic.ObjectMeta).Should(WithTransform(f.CountSuccessfulBackups, BeNumerically("==", 0)))
-
-			})
-		})
-	})
-
-	Describe("Private docker registry", func() {
-		var registryCred core.Secret
-		AfterEach(func() {
-			f.DeleteDeployment(deployment.ObjectMeta)
-			f.DeleteRestic(restic.ObjectMeta)
-			f.DeleteSecret(cred.ObjectMeta)
-			f.DeleteSecret(registryCred.ObjectMeta)
-		})
-		BeforeEach(func() {
-			By("Reading docker config json file")
-			dockerCfgJson, err := ioutil.ReadFile(filepath.Join(os.Getenv("HOME"), ".docker/config.json"))
-			Expect(err).NotTo(HaveOccurred())
-
-			registryCred = f.SecretForRegistry(dockerCfgJson)
-			By("Creating registry Secret " + registryCred.Name)
-			err = f.CreateSecret(registryCred)
-			Expect(err).NotTo(HaveOccurred())
-
-			cred = f.SecretForLocalBackend()
-			restic = f.ResticForLocalBackend()
-			restic.Spec.ImagePullSecrets = []core.LocalObjectReference{
-				{
-					Name: registryCred.Name,
-				},
-			}
-		})
-		It(`should backup new Deployment`, shouldBackupNewDeployment)
 	})
 
 	Describe("Pause Restic to stop backup", func() {
 		Context(`"Local" backend`, func() {
 			AfterEach(func() {
-				f.DeleteDeployment(deployment.ObjectMeta)
+				f.DeleteReplicaSet(rs.ObjectMeta)
 				f.DeleteRestic(restic.ObjectMeta)
 				f.DeleteSecret(cred.ObjectMeta)
 			})
@@ -925,16 +714,16 @@ var _ = Describe("Deployment", func() {
 				err = f.CreateSecret(cred)
 				Expect(err).NotTo(HaveOccurred())
 
-				By("Creating restic")
+				By("Creating restic " + restic.Name)
 				err = f.CreateRestic(restic)
 				Expect(err).NotTo(HaveOccurred())
 
-				By("Creating Deployment " + deployment.Name)
-				_, err = f.CreateDeployment(deployment)
+				By("Creating ReplicaSet " + rs.Name)
+				_, err = f.CreateReplicaSet(rs)
 				Expect(err).NotTo(HaveOccurred())
 
 				By("Waiting for sidecar")
-				f.EventuallyDeployment(deployment.ObjectMeta).Should(HaveSidecar(util.StashContainer))
+				f.EventuallyReplicaSet(rs.ObjectMeta).Should(HaveSidecar(util.StashContainer))
 
 				By("Waiting for backup to complete")
 				f.EventuallyRestic(restic.ObjectMeta).Should(WithTransform(func(r *api.Restic) int64 {
